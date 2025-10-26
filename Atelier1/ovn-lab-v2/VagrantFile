@@ -1,0 +1,63 @@
+Vagrant.configure("2") do |config|
+    config.vm.box = "ubuntu/jammy64"
+  
+    # ====== Provider VirtualBox (appliqué à TOUTES les VMs) ======
+    config.vm.provider "virtualbox" do |vb|
+      vb.memory = 2048
+      vb.cpus = 2
+  
+      # Carte 1 = NAT (pour apt update, etc.)
+      vb.customize ["modifyvm", :id, "--nic1", "nat"]
+  
+      # Carte 2 = Host-Only et on force le NOM exact de l'adaptateur
+      vb.customize ["modifyvm", :id, "--nic2", "hostonly"]
+      vb.customize ["modifyvm", :id, "--hostonlyadapter2", "VirtualBox Host-Only Ethernet Adapter #2"]
+      # Si dans ta GUI il s'appelle "#2", mets exactement :
+      # vb.customize ["modifyvm", :id, "--hostonlyadapter2", "VirtualBox Host-Only Ethernet Adapter #2"]
+    end
+  
+    # Petit helper pour attribuer l'IP sur la NIC2 (host-only)
+    def setup_network(vm, ip)
+      vm.vm.network "private_network", ip: ip
+    end
+  
+    # ------- Control Node -------
+    config.vm.define "control" do |c|
+      c.vm.hostname = "control"
+      setup_network(c, "192.168.56.10")
+      c.vm.provision "file", source: "scripts/install_common.sh", destination: "/tmp/install_common.sh"
+      c.vm.provision "file", source: "scripts/setup_control.sh", destination: "/tmp/setup_control.sh"
+      c.vm.provision "shell", inline: <<-SHELL
+        chmod +x /tmp/install_common.sh /tmp/setup_control.sh
+        bash /tmp/install_common.sh
+        bash /tmp/setup_control.sh
+      SHELL
+    end
+  
+    # ------- Compute1 -------
+    config.vm.define "compute1" do |c1|
+      c1.vm.hostname = "compute1"
+      setup_network(c1, "192.168.56.11")
+      c1.vm.provision "file", source: "scripts/install_common.sh", destination: "/tmp/install_common.sh"
+      c1.vm.provision "file", source: "scripts/setup_compute.sh", destination: "/tmp/setup_compute.sh"
+      c1.vm.provision "shell", inline: <<-SHELL
+        chmod +x /tmp/install_common.sh /tmp/setup_compute.sh
+        bash /tmp/install_common.sh
+        bash /tmp/setup_compute.sh 192.168.56.10 192.168.56.11
+      SHELL
+    end
+  
+    # ------- Compute2 -------
+    config.vm.define "compute2" do |c2|
+      c2.vm.hostname = "compute2"
+      setup_network(c2, "192.168.56.12")
+      c2.vm.provision "file", source: "scripts/install_common.sh", destination: "/tmp/install_common.sh"
+      c2.vm.provision "file", source: "scripts/setup_compute.sh", destination: "/tmp/setup_compute.sh"
+      c2.vm.provision "shell", inline: <<-SHELL
+        chmod +x /tmp/install_common.sh /tmp/setup_compute.sh
+        bash /tmp/install_common.sh
+        bash /tmp/setup_compute.sh 192.168.56.10 192.168.56.12
+      SHELL
+    end
+  end
+  

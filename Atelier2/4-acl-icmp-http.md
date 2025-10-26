@@ -14,40 +14,60 @@ Aucune commande à changer sur les computes/VMs.
 > et on **drop** le reste.
 
 ```bash
-# === Nettoyage (facultatif, pour repartir propre) ===
-ovn-nbctl acl-del ls-A
-ovn-nbctl acl-del ls-B
+#!/usr/bin/env bash
+set -euo pipefail
 
-# === Règles communes : ARP + established/related (sur chaque LS) ===
-# ls-A
-ovn-nbctl acl-add ls-A from-lport 1001 'arp' allow
-ovn-nbctl acl-add ls-A to-lport   1001 'arp' allow
-ovn-nbctl acl-add ls-A from-lport 1000 'ct.est || ct.rel' allow
-ovn-nbctl acl-add ls-A to-lport   1000 'ct.est || ct.rel' allow
+echo "[INFO] Réinitialisation des ACL..."
+ovn-nbctl acl-del ls-A || true
+ovn-nbctl acl-del ls-B || true
 
-# ls-B
-ovn-nbctl acl-add ls-B from-lport 1001 'arp' allow
-ovn-nbctl acl-add ls-B to-lport   1001 'arp' allow
-ovn-nbctl acl-add ls-B from-lport 1000 'ct.est || ct.rel' allow
-ovn-nbctl acl-add ls-B to-lport   1000 'ct.est || ct.rel' allow
+# ============================
+# 1️⃣ Règles communes (ARP + flux suivis)
+# ============================
+for LS in ls-A ls-B; do
+  ovn-nbctl acl-add $LS from-lport 1001 'arp' allow
+  ovn-nbctl acl-add $LS to-lport   1001 'arp' allow
+  ovn-nbctl acl-add $LS from-lport 1000 'ct.est || ct.rel' allow
+  ovn-nbctl acl-add $LS to-lport   1000 'ct.est || ct.rel' allow
+done
 
-# === Autoriser depuis vmB -> vmA : ICMP echo-request + HTTP/80 ===
-# (on place ces règles là où sort le trafic : ls-B, direction from-lport)
-ovn-nbctl acl-add ls-B from-lport 1003 'ip4 && icmp4 && icmp4.type==8 && ip4.dst==10.0.1.10' allow
-ovn-nbctl acl-add ls-B from-lport 1004 'ip4 && tcp && tcp.dst==80 && ip4.dst==10.0.1.10' allow
+# ============================
+# 2️⃣ Flux vmB (10.0.2.10) → vmA (10.0.1.10)
+# ============================
 
-# (optionnel) Autoriser explicitement echo-reply entrant sur ls-A (sinon ct.est le couvrira)
-ovn-nbctl acl-add ls-A to-lport   1002 'ip4 && icmp4 && icmp4.type==0 && ip4.src==10.0.2.10' allow
+# a) Sortant (vmB initie)
+ovn-nbctl acl-add ls-B from-lport 1003 'ip4 && icmp4 && icmp4.type==8 && ip4.dst==10.0.1.10' allow  # ping
+ovn-nbctl acl-add ls-B from-lport 1004 'ip4 && tcp && tcp.dst==80 && ip4.dst==10.0.1.10' allow       # HTTP
 
-# === Politique par défaut : DROP partout ===
-ovn-nbctl acl-add ls-A from-lport 0 'ip' drop
-ovn-nbctl acl-add ls-A to-lport   0 'ip' drop
-ovn-nbctl acl-add ls-B from-lport 0 'ip' drop
-ovn-nbctl acl-add ls-B to-lport   0 'ip' drop
+# b) Vers le routeur (ls-B → lr-AB)
+ovn-nbctl acl-add ls-B to-lport 1002 'ip4 && (icmp4 || tcp)' allow
 
-# Vérif
-ovn-nbctl acl-list ls-A
-ovn-nbctl acl-list ls-B
+# ============================
+# 3️⃣ Flux retour vmA → vmB (echo-reply / HTTP response)
+# ============================
+
+# a) Autoriser la réponse ICMP type=0 depuis vmA
+ovn-nbctl acl-add ls-A from-lport 1003 'ip4 && icmp4 && icmp4.type==0 && ip4.dst==10.0.2.10' allow
+
+# b) Autoriser HTTP réponse (tcp.src==80)
+ovn-nbctl acl-add ls-A from-lport 1004 'ip4 && tcp && tcp.src==80 && ip4.dst==10.0.2.10' allow
+
+# c) Autoriser réception côté vmA
+ovn-nbctl acl-add ls-A to-lport 1003 'ip4 && icmp4 && icmp4.type==8 && ip4.dst==10.0.1.10' allow
+ovn-nbctl acl-add ls-A to-lport 1004 'ip4 && tcp && tcp.dst==80 && ip4.dst==10.0.1.10' allow
+
+# d) Autoriser passage via le routeur côté A
+ovn-nbctl acl-add ls-A to-lport 1002 'ip4 && (icmp4 || tcp)' allow
+
+# ============================
+# 4️⃣ Politique par défaut : DROP
+# ============================
+for LS in ls-A ls-B; do
+  ovn-nbctl acl-add $LS from-lport 0 'ip' drop
+  ovn-nbctl acl-add $LS to-lport   0 'ip' drop
+done
+
+echo "[OK] ACLs appliquées avec succès ✅"
 ```
 
 ---
