@@ -14,8 +14,6 @@ ovs-vsctl --may-exist add-br br-int
 ovs-vsctl --may-exist add-br br-ex
 ovs-vsctl --may-exist add-br br-local
 
-sudo ovs-vsctl set-fail-mode br-int secure
-
 # Configurer l'intégration OVN
 sudo ovs-vsctl set open . \
   external-ids:system-id="$(hostname -s)" \
