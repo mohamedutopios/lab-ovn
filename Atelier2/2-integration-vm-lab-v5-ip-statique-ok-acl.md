@@ -101,8 +101,8 @@ EOF
 sudo virsh net-define /etc/libvirt/qemu/networks/ovn.xml
 sudo virsh net-start ovn
 sudo virsh net-autostart ovn
-ip link set br-int up
-systemctl enable --now libvirtd
+sudo ip link set br-int up
+sudo systemctl enable --now libvirtd
 ```
 
 ---

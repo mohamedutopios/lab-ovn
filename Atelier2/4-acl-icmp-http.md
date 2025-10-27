@@ -17,57 +17,64 @@ Aucune commande à changer sur les computes/VMs.
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[INFO] Réinitialisation des ACL..."
-ovn-nbctl acl-del ls-A || true
-ovn-nbctl acl-del ls-B || true
+echo "[INFO] Configuration ACLs - ICMP + HTTP uniquement..."
+
+# Réinitialisation
+sudo ovn-nbctl acl-del ls-A || true
+sudo ovn-nbctl acl-del ls-B || true
 
 # ============================
-# 1️⃣ Règles communes (ARP + flux suivis)
+# 1️⃣ Règles de base (ARP + connexions établies)
 # ============================
 for LS in ls-A ls-B; do
-  ovn-nbctl acl-add $LS from-lport 1001 'arp' allow
-  ovn-nbctl acl-add $LS to-lport   1001 'arp' allow
-  ovn-nbctl acl-add $LS from-lport 1000 'ct.est || ct.rel' allow
-  ovn-nbctl acl-add $LS to-lport   1000 'ct.est || ct.rel' allow
+  # ARP obligatoire
+  sudo ovn-nbctl acl-add $LS from-lport 1001 'arp' allow
+  sudo ovn-nbctl acl-add $LS to-lport   1001 'arp' allow
+  
+  # Connexions établies/reliées (permet les réponses automatiquement)
+  sudo ovn-nbctl acl-add $LS from-lport 1000 'ct.est || ct.rel' allow
+  sudo ovn-nbctl acl-add $LS to-lport   1000 'ct.est || ct.rel' allow
 done
 
 # ============================
-# 2️⃣ Flux vmB (10.0.2.10) → vmA (10.0.1.10)
-# ============================
-
-# a) Sortant (vmB initie)
-ovn-nbctl acl-add ls-B from-lport 1003 'ip4 && icmp4 && icmp4.type==8 && ip4.dst==10.0.1.10' allow  # ping
-ovn-nbctl acl-add ls-B from-lport 1004 'ip4 && tcp && tcp.dst==80 && ip4.dst==10.0.1.10' allow       # HTTP
-
-# b) Vers le routeur (ls-B → lr-AB)
-ovn-nbctl acl-add ls-B to-lport 1002 'ip4 && (icmp4 || tcp)' allow
-
-# ============================
-# 3️⃣ Flux retour vmA → vmB (echo-reply / HTTP response)
-# ============================
-
-# a) Autoriser la réponse ICMP type=0 depuis vmA
-ovn-nbctl acl-add ls-A from-lport 1003 'ip4 && icmp4 && icmp4.type==0 && ip4.dst==10.0.2.10' allow
-
-# b) Autoriser HTTP réponse (tcp.src==80)
-ovn-nbctl acl-add ls-A from-lport 1004 'ip4 && tcp && tcp.src==80 && ip4.dst==10.0.2.10' allow
-
-# c) Autoriser réception côté vmA
-ovn-nbctl acl-add ls-A to-lport 1003 'ip4 && icmp4 && icmp4.type==8 && ip4.dst==10.0.1.10' allow
-ovn-nbctl acl-add ls-A to-lport 1004 'ip4 && tcp && tcp.dst==80 && ip4.dst==10.0.1.10' allow
-
-# d) Autoriser passage via le routeur côté A
-ovn-nbctl acl-add ls-A to-lport 1002 'ip4 && (icmp4 || tcp)' allow
-
-# ============================
-# 4️⃣ Politique par défaut : DROP
+# 2️⃣ ICMP (ping) - bidirectionnel
 # ============================
 for LS in ls-A ls-B; do
-  ovn-nbctl acl-add $LS from-lport 0 'ip' drop
-  ovn-nbctl acl-add $LS to-lport   0 'ip' drop
+  # Sortie : autoriser tout ICMP
+  sudo ovn-nbctl acl-add $LS from-lport 900 'ip4 && icmp4' allow-related
+  
+  # Entrée : autoriser tout ICMP
+  sudo ovn-nbctl acl-add $LS to-lport 900 'ip4 && icmp4' allow-related
 done
 
-echo "[OK] ACLs appliquées avec succès ✅"
+# ============================
+# 3️⃣ HTTP (TCP port 80) - bidirectionnel
+# ============================
+for LS in ls-A ls-B; do
+  # Sortie : autoriser connexions HTTP sortantes
+  sudo ovn-nbctl acl-add $LS from-lport 800 'ip4 && tcp && tcp.dst==80' allow-related
+  
+  # Entrée : autoriser connexions HTTP entrantes (serveur)
+  sudo ovn-nbctl acl-add $LS to-lport 800 'ip4 && tcp && tcp.dst==80' allow-related
+done
+
+# ============================
+# 4️⃣ DROP tout le reste
+# ============================
+for LS in ls-A ls-B; do
+  sudo ovn-nbctl acl-add $LS from-lport 0 'ip' drop
+  sudo ovn-nbctl acl-add $LS to-lport   0 'ip' drop
+done
+
+echo "[OK] ACLs appliquées : ICMP + HTTP autorisés ✅"
+echo ""
+echo "Tests disponibles :"
+echo "  - ping 10.0.1.10  (depuis vmB)"
+echo "  - ping 10.0.2.10  (depuis vmA)"
+echo "  - curl http://10.0.1.10  (si serveur HTTP sur vmA)"
+echo ""
+echo "Vérification des ACLs :"
+sudo ovn-nbctl list ACL | grep -E 'match|action|priority'
 ```
 
 ---
@@ -113,3 +120,5 @@ ovn-nbctl acl-add ls-B from-lport 1003 'ip4 && icmp4 && icmp4.type==8 && outport
 ```
 
 Ça suffit pour ta démo **IP statiques + ACL (ICMP/HTTP)**, sans toucher au reste de ta config.
+
+
