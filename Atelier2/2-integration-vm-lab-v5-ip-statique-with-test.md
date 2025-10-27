@@ -131,9 +131,9 @@ sudo ovn-nbctl --may-exist lsp-add ls-B vmB
 
 # (IP statiques) Adresse + port-security
 sudo ovn-nbctl lsp-set-addresses vmA "52:54:00:aa:00:10 10.0.1.10"
-sudo ovn-nbctl lsp-set-port-security vmA "52:54:00:aa:00:10 10.0.1.10"
+
 sudo ovn-nbctl lsp-set-addresses vmB "52:54:00:bb:00:10 10.0.2.10"
-sudo ovn-nbctl lsp-set-port-security vmB "52:54:00:bb:00:10 10.0.2.10"
+
 ```
 
 ---

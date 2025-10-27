@@ -1,62 +1,54 @@
-# Vagrantfile - OVN Lab (control, compute1, compute2)
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"
-  
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
   config.vm.provider "virtualbox" do |vb|
-    vb.memory = 2048
-    vb.cpus   = 2
+    vb.memory = 4096  # Plus de RAM pour VMs imbriquées
+    vb.cpus = 2
+    # Activer virtualisation imbriquée
+    vb.customize ["modifyvm", :id, "--nested-hw-virt", "on"]
   end
 
-  # ---------------- Control ----------------
+  def setup_network(vm, ip)
+    vm.vm.network "private_network", ip: ip
+  end
+
+  # ------- Control Node -------
   config.vm.define "control" do |c|
     c.vm.hostname = "control"
-    c.vm.network "private_network", ip: "192.168.56.10"
-
+    setup_network(c, "192.168.56.10")
     c.vm.provision "file", source: "scripts/install_common.sh", destination: "/tmp/install_common.sh"
     c.vm.provision "file", source: "scripts/setup_control.sh", destination: "/tmp/setup_control.sh"
     c.vm.provision "shell", inline: <<-SHELL
-      # Corriger les fins de ligne Windows
-      dos2unix /tmp/install_common.sh 2>/dev/null || sed -i 's/\r$//' /tmp/install_common.sh
-      dos2unix /tmp/setup_control.sh 2>/dev/null || sed -i 's/\r$//' /tmp/setup_control.sh
-      
+      sed -i 's/\r$//' /tmp/install_common.sh /tmp/setup_control.sh
       chmod +x /tmp/install_common.sh /tmp/setup_control.sh
       bash /tmp/install_common.sh
       bash /tmp/setup_control.sh
     SHELL
   end
 
-  # ---------------- Compute1 ----------------
+  # ------- Compute1 -------
   config.vm.define "compute1" do |c1|
     c1.vm.hostname = "compute1"
-    c1.vm.network "private_network", ip: "192.168.56.11"
-
+    setup_network(c1, "192.168.56.11")
     c1.vm.provision "file", source: "scripts/install_common.sh", destination: "/tmp/install_common.sh"
     c1.vm.provision "file", source: "scripts/setup_compute.sh", destination: "/tmp/setup_compute.sh"
     c1.vm.provision "shell", inline: <<-SHELL
-      # Corriger les fins de ligne Windows
-      dos2unix /tmp/install_common.sh 2>/dev/null || sed -i 's/\r$//' /tmp/install_common.sh
-      dos2unix /tmp/setup_compute.sh 2>/dev/null || sed -i 's/\r$//' /tmp/setup_compute.sh
-      
+      sed -i 's/\r$//' /tmp/install_common.sh /tmp/setup_compute.sh
       chmod +x /tmp/install_common.sh /tmp/setup_compute.sh
       bash /tmp/install_common.sh
       bash /tmp/setup_compute.sh 192.168.56.10 192.168.56.11
     SHELL
   end
 
-  # ---------------- Compute2 ----------------
+  # ------- Compute2 -------
   config.vm.define "compute2" do |c2|
     c2.vm.hostname = "compute2"
-    c2.vm.network "private_network", ip: "192.168.56.12"
-
+    setup_network(c2, "192.168.56.12")
     c2.vm.provision "file", source: "scripts/install_common.sh", destination: "/tmp/install_common.sh"
     c2.vm.provision "file", source: "scripts/setup_compute.sh", destination: "/tmp/setup_compute.sh"
     c2.vm.provision "shell", inline: <<-SHELL
-      # Corriger les fins de ligne Windows
-      dos2unix /tmp/install_common.sh 2>/dev/null || sed -i 's/\r$//' /tmp/install_common.sh
-      dos2unix /tmp/setup_compute.sh 2>/dev/null || sed -i 's/\r$//' /tmp/setup_compute.sh
-      
+      sed -i 's/\r$//' /tmp/install_common.sh /tmp/setup_compute.sh
       chmod +x /tmp/install_common.sh /tmp/setup_compute.sh
       bash /tmp/install_common.sh
       bash /tmp/setup_compute.sh 192.168.56.10 192.168.56.12
